@@ -134,7 +134,7 @@ def main() -> None:
                 current_report['message'] = message
                 raise StatusError(message)
         except StatusError as e:
-            logging.error(f'Новый статус отсутсвует: {e}')
+            logging.error(f'{e}')
         if current_report != prev_report:
             send_message(bot, message)
             prev_report = current_report.copy()
