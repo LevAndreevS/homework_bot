@@ -8,14 +8,15 @@ import requests
 import telegram
 from dotenv import load_dotenv
 
-from exceptions import StatusError, UrlError
+from exceptions import UrlError
 
 load_dotenv()
 
 logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(funcName)s - %(message)s',
-    level=logging.DEBUG, handlers=[logging.StreamHandler(sys.stdout)]
+    level=logging.DEBUG, handlers=[logging.StreamHandler(sys.stdout)],
 )
+logger = logging.getLogger(__name__)
 
 
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
@@ -31,7 +32,7 @@ HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 HOMEWORK_VERDICTS = {
     'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
     'reviewing': 'Работа взята на проверку ревьюером.',
-    'rejected': 'Работа проверена: у ревьюера есть замечания.'
+    'rejected': 'Работа проверена: у ревьюера есть замечания.',
 }
 
 
@@ -49,7 +50,9 @@ def send_message(bot: telegram.Bot, message: str) -> None:
         )
         logging.debug('Сообщение отправлено')
     except telegram.error.TelegramError as e:
-        logging.error(f'Сообщение не отправлено: {e}')
+        logging.error(
+            f'Сообщение не отправлено: {e}', exc_info=True
+        )
 
 
 def get_api_answer(timestamp: int) -> dict:
@@ -63,12 +66,14 @@ def get_api_answer(timestamp: int) -> dict:
             params=payload
         )
         if response.status_code != HTTPStatus.OK:
-            raise UrlError(
-                'Запрос перенапрален или отсутсвует доступ к сайту'
-            )
-    except UrlError(Exception) as e:
-        logging.error(f'Сбой в работе сайта: {e}')
-        raise
+            message = ('Запрос перенапрален или отсутсвует доступ '
+                       f'к сайту {response.status_code}')
+            raise UrlError(message)
+    except UrlError as e:
+        logging.error(f'{e}', exc_info=True)
+        raise requests.RequestException('Ошибка в запросе к API')
+    except requests.RequestException as e:
+        logging.error(f'{e}', exc_info=True)
     return response.json()
 
 
@@ -76,28 +81,28 @@ def check_response(response: dict) -> str:
     """Проверяет ответ API на соответствие документации."""
     if not isinstance(response, dict):
         raise TypeError('Словарь имеет некорректный тип')
-    if 'homeworks' not in response:
-        raise TypeError('Осутствуют ожидаемые ключи')
-    if 'current_date' not in response:
-        raise TypeError('Осутствуют ожидаемые ключи')
     if not isinstance(response.get('homeworks'), list):
         raise TypeError('Формат ответа не соответствует')
+    if 'current_date' not in response:
+        raise TypeError('Осутствует ожидаемый ключ')
+    logging.debug(response.get('homeworks'))
     return response.get('homeworks')
 
 
 def parse_status(homework: dict) -> str:
     """Статус информации о конкретной домашней работе."""
     homework_name = homework.get('homework_name')
-    homework_status = homework.get('status')
-    verdict = HOMEWORK_VERDICTS.get(homework_status)
     if 'homework_name' not in homework:
         raise KeyError('Отсутствует имя домашней работы.')
+    homework_status = homework.get('status')
     if 'status' not in homework:
         raise KeyError('Отсутствует статус проверки.')
+    verdict = HOMEWORK_VERDICTS.get(homework_status)
     if homework_status not in HOMEWORK_VERDICTS:
         raise ValueError(
             f'Неожиданный статус работы: "{homework_status}"'
         )
+    logging.debug(f'Cтатус работы "{homework_name}". {verdict}')
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
@@ -112,12 +117,12 @@ def main() -> None:
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
     current_report = {
+        'name': '',
         'message': '',
-        'name': ''
     }
     prev_report = {
+        'name': '',
         'message': '',
-        'name': ''
     }
     while True:
         try:
@@ -127,17 +132,17 @@ def main() -> None:
             if homework:
                 homework = homework[0]
                 current_report['name'] = homework.get('homework_name')
-                message = parse_status(homework)
-                current_report['message'] = message
+                current_report['message'] = parse_status(homework)
             else:
-                message = 'Отсутсвует новый статус домашней работы.'
-                current_report['message'] = message
-                raise StatusError(message)
-        except StatusError as e:
-            logging.error(f'{e}')
+                current_report['message'] = ('Отсутсвует новый статус домашней'
+                                             ' работы.')
+        except (TypeError, KeyError, ValueError, Exception) as e:
+            logging.error(f'{e}', exc_info=True)
         if current_report != prev_report:
-            send_message(bot, message)
+            send_message(bot, current_report.get('message'))
             prev_report = current_report.copy()
+        logging.debug(current_report.get('message'))
+        logging.debug('Итерация завершена')
         time.sleep(RETRY_PERIOD)
 
 
