@@ -55,25 +55,18 @@ def send_message(bot: telegram.Bot, message: str) -> None:
 
 
 def get_api_answer(timestamp: int) -> dict:
-    """Запрашивает к единственному эндпоинту API-сервиса."""
-    current_timestamp = timestamp or int(time.time())
-    payload = {'from_date': current_timestamp}
+    """Запрос к эндпоинту API-сервиса."""
+    payload = {'from_date': timestamp}
+    allparams = {'url': ENDPOINT, 'headers': HEADERS, 'params': payload}
     try:
-        response = requests.get(
-            ENDPOINT,
-            headers=HEADERS,
-            params=payload,
-        )
-        if response.status_code != HTTPStatus.OK:
-            message = ('Запрос перенапрален или отсутсвует доступ '
-                       f'к сайту {response.status_code}')
-            raise UrlError(message)
-        return response.json()
-    except UrlError as e:
-        logging.error(f'{e}')
-        raise RequestException('Ошибка в запросе к API')
+        response = requests.get(**allparams)
     except RequestException as e:
-        logging.error(f'{e}')
+        raise RequestException(f'Ошибка в запросе к API {response.url} {e}')
+    if not response.status_code == HTTPStatus.OK:
+        message = ('Запрос перенапрален или отсутсвует доступ '
+                   f'к сайту status_code: {response.status_code}')
+        raise UrlError(message)
+    return response.json()
 
 
 def check_response(response: dict) -> str:
@@ -96,11 +89,11 @@ def parse_status(homework: dict) -> str:
     homework_status = homework.get('status')
     if 'status' not in homework:
         raise KeyError('Отсутствует статус проверки.')
-    verdict = HOMEWORK_VERDICTS.get(homework_status)
     if homework_status not in HOMEWORK_VERDICTS:
         raise ValueError(
             f'Неожиданный статус работы: "{homework_status}"'
         )
+    verdict = HOMEWORK_VERDICTS.get(homework_status)
     logging.debug(f'Cтатус работы "{homework_name}". {verdict}')
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
@@ -136,6 +129,7 @@ def main() -> None:
                 current_report['message'] = ('Отсутсвует новый статус домашней'
                                              ' работы.')
         except (TypeError, KeyError, ValueError, Exception) as e:
+            current_report['message'] = f'{e}'
             logging.error(f'{e}')
         if current_report != prev_report:
             send_message(bot, current_report.get('message'))
