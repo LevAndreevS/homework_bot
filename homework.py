@@ -9,6 +9,7 @@ import telegram
 from dotenv import load_dotenv
 
 from exceptions import UrlError
+from requests import RequestException
 
 load_dotenv()
 
@@ -46,13 +47,11 @@ def send_message(bot: telegram.Bot, message: str) -> None:
     try:
         bot.send_message(
             chat_id=TELEGRAM_CHAT_ID,
-            text=message
+            text=message,
         )
         logging.debug('Сообщение отправлено')
     except telegram.error.TelegramError as e:
-        logging.error(
-            f'Сообщение не отправлено: {e}', exc_info=True
-        )
+        logging.error(f'Сообщение не отправлено: {e}')
 
 
 def get_api_answer(timestamp: int) -> dict:
@@ -63,18 +62,18 @@ def get_api_answer(timestamp: int) -> dict:
         response = requests.get(
             ENDPOINT,
             headers=HEADERS,
-            params=payload
+            params=payload,
         )
         if response.status_code != HTTPStatus.OK:
             message = ('Запрос перенапрален или отсутсвует доступ '
                        f'к сайту {response.status_code}')
             raise UrlError(message)
+        return response.json()
     except UrlError as e:
-        logging.error(f'{e}', exc_info=True)
-        raise requests.RequestException('Ошибка в запросе к API')
-    except requests.RequestException as e:
-        logging.error(f'{e}', exc_info=True)
-    return response.json()
+        logging.error(f'{e}')
+        raise RequestException('Ошибка в запросе к API')
+    except RequestException as e:
+        logging.error(f'{e}')
 
 
 def check_response(response: dict) -> str:
@@ -137,7 +136,7 @@ def main() -> None:
                 current_report['message'] = ('Отсутсвует новый статус домашней'
                                              ' работы.')
         except (TypeError, KeyError, ValueError, Exception) as e:
-            logging.error(f'{e}', exc_info=True)
+            logging.error(f'{e}')
         if current_report != prev_report:
             send_message(bot, current_report.get('message'))
             prev_report = current_report.copy()
