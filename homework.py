@@ -7,9 +7,9 @@ from http import HTTPStatus
 import requests
 import telegram
 from dotenv import load_dotenv
+from requests import RequestException
 
 from exceptions import UrlError
-from requests import RequestException
 
 load_dotenv()
 
